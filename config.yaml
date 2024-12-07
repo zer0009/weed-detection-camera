@@ -1,0 +1,19 @@
+camera:
+  camera_type: "usb"
+  resolution: [640, 480]
+  framerate: 30
+  image_path: "images/captured_image.jpg"
+  rotation: 0
+  brightness: 50
+  contrast: 50
+  auto_exposure: true
+
+ai:
+  model_path: "models/yolov5s.pt"
+  confidence_threshold: 0.25
+  input_size: [640, 640]
+  class_names: ["crop", "weed"]
+  enable_half: false
+  warmup_iterations: 3
+  max_batch_size: 1
+  enable_debug: true
