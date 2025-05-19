@@ -7,8 +7,8 @@ camera:
   framerate: 30  # Increased framerate since camera supports it
   image_path: "images/captured_image.jpg"
   rotation: 0
-  brightness: 60  # Increased brightness
-  contrast: 60  # Increased contrast
+  brightness: 80  # Significantly increased brightness for low-light conditions
+  contrast: 75  # Increased contrast for better visibility
   auto_exposure: true
   hfov: 90.0  # Horizontal field of view in degrees (typical for wide-angle USB camera)
   vfov: 67.5  # Vertical field of view in degrees (typical for wide-angle USB camera)

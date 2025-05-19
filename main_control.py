@@ -64,11 +64,16 @@ def initialize_camera(config):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config['resolution'][1])
     cap.set(cv2.CAP_PROP_FPS, config['framerate'])
     
-    # Try to set exposure and other settings
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # Enable auto exposure
-    cap.set(cv2.CAP_PROP_EXPOSURE, -6)
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, config['brightness'] / 100.0)
-    cap.set(cv2.CAP_PROP_CONTRAST, config['contrast'] / 100.0)
+    # Set brightness and contrast higher for better visibility
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, config['brightness'] / 100.0)  # Convert to 0-1 range
+    cap.set(cv2.CAP_PROP_CONTRAST, config['contrast'] / 100.0)  # Convert to 0-1 range
+    
+    # Adjust exposure for low-light conditions
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # 1 = manual exposure mode, 3 = auto exposure mode
+    cap.set(cv2.CAP_PROP_EXPOSURE, 0)  # Positive value for brighter exposure (max exposure)
+    
+    # Try to set gain for better low-light performance
+    cap.set(cv2.CAP_PROP_GAIN, 100)  # Maximum gain
     
     # Additional settings
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -80,12 +85,20 @@ def initialize_camera(config):
     actual_fps = cap.get(cv2.CAP_PROP_FPS)
     actual_zoom = cap.get(cv2.CAP_PROP_ZOOM)
     actual_focus = cap.get(cv2.CAP_PROP_FOCUS)
+    actual_brightness = cap.get(cv2.CAP_PROP_BRIGHTNESS)
+    actual_contrast = cap.get(cv2.CAP_PROP_CONTRAST)
+    actual_exposure = cap.get(cv2.CAP_PROP_EXPOSURE)
+    actual_gain = cap.get(cv2.CAP_PROP_GAIN)
     
     logger.info("Actual camera settings after initialization:")
     logger.info(f"Resolution: {actual_width}x{actual_height}")
     logger.info(f"FPS: {actual_fps}")
     logger.info(f"Zoom: {actual_zoom}")
     logger.info(f"Focus: {actual_focus}")
+    logger.info(f"Brightness: {actual_brightness}")
+    logger.info(f"Contrast: {actual_contrast}")
+    logger.info(f"Exposure: {actual_exposure}")
+    logger.info(f"Gain: {actual_gain}")
     
     if actual_width != config['resolution'][0] or actual_height != config['resolution'][1]:
         logger.warning(f"Camera resolution mismatch. Requested: {config['resolution']}, Got: {actual_width}x{actual_height}")
