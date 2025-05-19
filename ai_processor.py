@@ -268,28 +268,49 @@ class AIProcessor:
             self.logger.info(f"Weed detected at angle_x: {angle_x:.2f} deg, angle_y: {angle_y:.2f} deg, distance: {distance:.2f} cm")
             
             # Convert angle and distance to ESP32 coordinate system
-            # Map camera angles to ESP32's expected coordinate system
-            # Here we map to a 0-100 coordinate range as defined in the ESP32 config.h
-            x_coord = int(50 + (angle_x / (self.hfov/2) * 50))
-            y_coord = int(50 + (angle_y / (self.vfov/2) * 50))
+            # ESP32 code expects coordinates in range 0-100 for both X and Y
+            # Based on serial_comm.cpp:parse_weed_coordinates
             
-            # Ensure coordinates are within valid range (0-100 as defined in ESP32 code)
+            # Map camera FOV angles to ESP32's expected 0-100 coordinate range
+            # Map -hfov/2 to +hfov/2 -> 0 to 100
+            # First normalize angle to range [-1, 1]
+            normalized_x = angle_x / (self.hfov/2)  # Will be -1 to 1
+            normalized_y = angle_y / (self.vfov/2)  # Will be -1 to 1
+            
+            # Then map to ESP32's 0-100 range
+            x_coord = int(50 + (normalized_x * 50))
+            y_coord = int(50 + (normalized_y * 50))
+            
+            # Ensure coordinates are within valid range (0-100 as defined in ESP32 config.h)
             x_coord = max(0, min(100, x_coord))
             y_coord = max(0, min(100, y_coord))
             
             self.logger.info(f"Sending weed coordinates to ESP32: X={x_coord}, Y={y_coord}")
             
             # Send weed coordinates to ESP32 over UART
-            if self.uart_comm.send_weed_coordinates(x_coord, y_coord):
+            success = self.uart_comm.send_weed_coordinates(x_coord, y_coord)
+            
+            if success:
+                self.logger.info(f"Successfully sent coordinates X={x_coord}, Y={y_coord} to ESP32")
+                
                 # Wait for ESP32 to process and handle the weed
-                time.sleep(0.5)
+                time.sleep(1.0)  # Give ESP32 more time to respond
                 
                 # Check for response from ESP32
                 status = self.uart_comm.process_esp32_response()
-                if status == "WEED_REMOVED":
-                    self.logger.info("Weed successfully removed by delta arm")
-                elif status == "REMOVE_FAILED":
-                    self.logger.warning("Failed to remove weed, delta arm operation failed")
+                if status:
+                    if status == "WEED_REMOVED":
+                        self.logger.info("Weed successfully removed by delta arm")
+                    elif status == "WEEDING_STARTED":
+                        self.logger.info("ESP32 started weed removal process")
+                    elif status == "WEEDING_COMPLETED":
+                        self.logger.info("Weed removal process completed")
+                    elif status == "REMOVE_FAILED":
+                        self.logger.warning("Failed to remove weed, delta arm operation failed")
+                    else:
+                        self.logger.info(f"ESP32 responded with status: {status}")
+                else:
+                    self.logger.warning("No response received from ESP32 after sending coordinates")
                 
                 return True
             else:

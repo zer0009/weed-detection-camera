@@ -27,5 +27,5 @@ ai:
 # UART communication settings for ESP32
 uart:
   device: "/dev/ttyUSB0"  # Change to appropriate port on your system (COM port on Windows)
-  baud_rate: 115200
-  timeout: 1.0
+  baud_rate: 115200  # Matching ESP32 UART configuration
+  timeout: 2.0  # Increased timeout for better reliability
