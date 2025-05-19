@@ -1,0 +1,11 @@
+models/
+debug/
+*.jpg
+*.png
+*.jpeg
+*.gif
+*.bmp
+test_images/
+test_old/
+logs/
+images/
