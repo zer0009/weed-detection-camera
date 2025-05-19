@@ -264,7 +264,8 @@ class AIProcessor:
             angle_y = detection['offset_angle_y']
             distance = detection['distance']
             
-            self.logger.info(f"Weed detected at angle_x: {angle_x:.2f}°, angle_y: {angle_y:.2f}°, distance: {distance:.2f} cm")
+            # Use standard ASCII text instead of special characters for the degree symbol
+            self.logger.info(f"Weed detected at angle_x: {angle_x:.2f} deg, angle_y: {angle_y:.2f} deg, distance: {distance:.2f} cm")
             
             # Convert angle and distance to ESP32 coordinate system
             # Map camera angles to ESP32's expected coordinate system

@@ -97,10 +97,25 @@ else:
                 try:
                     with self.lock:
                         if self.ser.in_waiting > 0:
-                            data = self.ser.readline().decode().strip()
-                            if data:
-                                self.logger.debug(f"Received data: {data}")
+                            # Read raw binary data
+                            raw_data = self.ser.readline()
+                            
+                            try:
+                                # Try to decode using UTF-8 with error handling
+                                data = raw_data.decode('utf-8', errors='replace').strip()
+                                
+                                # Check if we have invalid replacement characters
+                                if '\ufffd' in data:
+                                    # This indicates there were decoding errors
+                                    self.logger.debug(f"Received data with encoding issues: {repr(raw_data)}")
+                                else:
+                                    self.logger.debug(f"Received data: {data}")
+                                    
                                 return data
+                            except Exception as e:
+                                self.logger.error(f"Error decoding data: {e}, raw bytes: {repr(raw_data)}")
+                                # Return a safe string representation of the raw data
+                                return f"[Binary data: {raw_data.hex()}]"
                 except Exception as e:
                     self.logger.error(f"Error receiving data: {e}")
             return None
@@ -108,10 +123,23 @@ else:
         def process_esp32_response(self):
             """Process response messages from ESP32"""
             response = self.receive_data()
-            if response and response.startswith("STATUS:"):
-                status = response[7:]  # Remove "STATUS:" prefix
-                self.logger.info(f"ESP32 Status: {status}")
-                return status
+            if response:
+                # Handle both text status responses and binary responses
+                if response.startswith("STATUS:"):
+                    status = response[7:]  # Remove "STATUS:" prefix
+                    self.logger.info(f"ESP32 Status: {status}")
+                    return status
+                elif response.startswith("[Binary data:"):
+                    # We received binary data that couldn't be decoded
+                    self.logger.debug("Received binary data from ESP32")
+                    # Attempt to extract status from binary data if possible
+                    if "WEED_REMOVED" in response:
+                        return "WEED_REMOVED"
+                    elif "REMOVE_FAILED" in response:
+                        return "REMOVE_FAILED"
+                    elif "TRACK_COMPLETED" in response:
+                        return "TRACK_COMPLETED"
+                    return "BINARY_DATA_RECEIVED"
             return None
         
         def close(self):
