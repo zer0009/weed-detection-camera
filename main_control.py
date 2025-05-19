@@ -159,12 +159,22 @@ def main():
     ai_processor = AIProcessor()
     
     # Test weed detection command
-    logger.info("Testing weed detection command...")
-    test_result = ai_processor.send_command_to_robot("TEST_WEED_DETECTION")
+    logger.info("Testing weed coordinates...")
+    test_x = 50  # Center position
+    test_y = 50  # Center position
+    test_result = uart_comm.send_weed_coordinates(test_x, test_y)
     if test_result:
-        logger.info("Successfully sent test command to ESP32")
+        logger.info(f"Successfully sent test coordinates X={test_x}, Y={test_y} to ESP32")
+        # Wait a moment for ESP32 to process
+        time.sleep(2.0)
+        # Try to get any response
+        response = uart_comm.process_esp32_response()
+        if response:
+            logger.info(f"Received response to test coordinates: {response}")
+        else:
+            logger.warning("No response to test coordinates")
     else:
-        logger.warning("Failed to send test command to ESP32")
+        logger.warning("Failed to send test coordinates to ESP32")
     
     # Ensure directories exist
     Path('images').mkdir(exist_ok=True)
@@ -405,9 +415,36 @@ def main():
                         logger.info("ESP32 connection test successful")
                     else:
                         logger.warning("ESP32 connection test failed")
-            elif key == ord('w'):  # Press 'w' to force weed test command
-                logger.info("Sending manual test command to ESP32...")
-                uart_comm.send_data("TEST_WEED_DETECTION")
+            elif key == ord('w'):  # Press 'w' to send weed coordinates to center position
+                logger.info("Sending manual test coordinates to center position...")
+                uart_comm.send_weed_coordinates(50, 50)
+            elif key == ord('1'):  # Press '1'-'9' to send test coordinates to different positions
+                logger.info("Sending test coordinates to position 1 (left front)...")
+                uart_comm.send_weed_coordinates(25, 25)
+            elif key == ord('2'):
+                logger.info("Sending test coordinates to position 2 (center front)...")
+                uart_comm.send_weed_coordinates(50, 25)  
+            elif key == ord('3'):
+                logger.info("Sending test coordinates to position 3 (right front)...")
+                uart_comm.send_weed_coordinates(75, 25)
+            elif key == ord('4'):
+                logger.info("Sending test coordinates to position 4 (left center)...")
+                uart_comm.send_weed_coordinates(25, 50)
+            elif key == ord('5'):
+                logger.info("Sending test coordinates to position 5 (center)...")
+                uart_comm.send_weed_coordinates(50, 50)
+            elif key == ord('6'):
+                logger.info("Sending test coordinates to position 6 (right center)...")
+                uart_comm.send_weed_coordinates(75, 50)
+            elif key == ord('7'):
+                logger.info("Sending test coordinates to position 7 (left back)...")
+                uart_comm.send_weed_coordinates(25, 75)
+            elif key == ord('8'):
+                logger.info("Sending test coordinates to position 8 (center back)...")
+                uart_comm.send_weed_coordinates(50, 75)
+            elif key == ord('9'):
+                logger.info("Sending test coordinates to position 9 (right back)...")
+                uart_comm.send_weed_coordinates(75, 75)
             
             # Add small delay to prevent CPU spinning
             time.sleep(0.01)
