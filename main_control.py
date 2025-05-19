@@ -9,6 +9,7 @@ from uart_communication import UARTCommunication
 import gc  # Add garbage collector
 import subprocess  # For temperature monitoring
 import math
+import platform
 
 def get_cpu_temperature():
     """Get the CPU temperature of the Raspberry Pi"""
@@ -136,14 +137,34 @@ def main():
     is_throttled = False
     
     # Initialize UART communication
+    logger.info("Initializing UART communication with ESP32...")
     uart_comm = UARTCommunication()
+    
+    # Check if ESP32 is connected and responding
+    if platform.system() != 'Windows':  # Only check on non-Windows platforms
+        if uart_comm.check_esp32_connection():
+            logger.info("ESP32 connection verified successfully")
+        else:
+            logger.warning("ESP32 connection test failed - check wiring and ESP32 power")
+            logger.warning("Will continue anyway, but delta arm may not respond")
+    
+    # Send system ready signal
     if uart_comm.send_data("SYSTEM_READY"):
-        logger.info("Successfully connected to ESP32 over UART")
+        logger.info("Sent SYSTEM_READY signal to ESP32")
     else:
-        logger.warning("Failed to connect to ESP32 over UART, continuing anyway...")
+        logger.warning("Failed to send SYSTEM_READY signal to ESP32")
     
     # Initialize AI Processor
+    logger.info("Initializing AI Processor...")
     ai_processor = AIProcessor()
+    
+    # Test weed detection command
+    logger.info("Testing weed detection command...")
+    test_result = ai_processor.send_command_to_robot("TEST_WEED_DETECTION")
+    if test_result:
+        logger.info("Successfully sent test command to ESP32")
+    else:
+        logger.warning("Failed to send test command to ESP32")
     
     # Ensure directories exist
     Path('images').mkdir(exist_ok=True)
@@ -160,6 +181,11 @@ def main():
     
     # Keep track of the most recent detections
     last_detections = []
+    
+    # Weed detection state
+    is_processing_weed = False
+    last_weed_time = 0
+    weed_process_interval = 5.0  # Seconds between weed processing attempts
     
     try:
         cap = initialize_camera(camera_config)
@@ -193,6 +219,11 @@ def main():
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_config['resolution'][1])
                     cap.set(cv2.CAP_PROP_FPS, camera_config['framerate'])
                 
+                # Also check ESP32 connection periodically
+                if platform.system() != 'Windows':  # Only check on non-Windows platforms
+                    if uart_comm.process_esp32_response():
+                        logger.info("Received response from ESP32 during periodic check")
+                
                 last_temp_check = current_time
             
             # Check for ESP32 status messages
@@ -200,9 +231,10 @@ def main():
             if esp32_status:
                 logger.info(f"ESP32 status: {esp32_status}")
                 
-                # Handle specific status messages
-                if esp32_status == "TRACK_COMPLETED":
-                    logger.info("Robot completed track and turned around")
+                # If we're waiting for weed processing to complete
+                if is_processing_weed and (esp32_status == "WEEDING_COMPLETED" or esp32_status == "WEED_REMOVED"):
+                    is_processing_weed = False
+                    logger.info("Weed processing completed by ESP32")
             
             # Grab frame from camera
             ret, frame = cap.read()
@@ -242,6 +274,30 @@ def main():
                     
                     if weed_count > 0 or crop_count > 0:
                         logger.info(f"Detected {weed_count} weeds and {crop_count} crops")
+                    
+                    # Process weed detections if we're not already processing one
+                    # and if it's been long enough since the last weed detection
+                    current_time = time.time()
+                    if weed_count > 0 and not is_processing_weed and (current_time - last_weed_time) > weed_process_interval:
+                        # Find the largest weed (by bounding box area) to process
+                        weeds = [d for d in detections if d['class'] == 'weed']
+                        if weeds:
+                            # Calculate areas
+                            for weed in weeds:
+                                box = weed['box']
+                                weed['area'] = (box[2] - box[0]) * (box[3] - box[1])
+                            
+                            # Sort by area (largest first)
+                            weeds.sort(key=lambda w: w['area'], reverse=True)
+                            
+                            # Process the largest weed
+                            largest_weed = weeds[0]
+                            logger.info(f"Processing largest detected weed (area: {largest_weed['area']:.1f} pixels)")
+                            
+                            # Let AI processor handle the detection
+                            is_processing_weed = True
+                            last_weed_time = current_time
+                            ai_processor.handle_weed_detection(largest_weed)
                 
                 # Force garbage collection after processing
                 gc.collect()
@@ -306,8 +362,14 @@ def main():
                 cv2.putText(display_frame, f"Weeds: {weed_count}, Crops: {crop_count}", (10, 90),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
             
+            # Add ESP32 connection status
+            conn_status = "Connected" if not is_processing_weed else "Processing Weed"
+            conn_color = (0, 255, 0) if not is_processing_weed else (0, 165, 255)
+            cv2.putText(display_frame, f"ESP32: {conn_status}", (10, 120),
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, conn_color, 2)
+            
             if is_throttled:
-                cv2.putText(display_frame, "THROTTLED", (10, 120),
+                cv2.putText(display_frame, "THROTTLED", (10, 150),
                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             
             # Add overlay grid for better visualization
@@ -336,6 +398,16 @@ def main():
             elif key == ord('c'):  # Press 'c' to clear detections
                 last_detections = []
                 logger.info("Cleared all detections from display")
+            elif key == ord('t'):  # Press 't' to test ESP32 connection
+                logger.info("Manually testing ESP32 connection...")
+                if platform.system() != 'Windows':  # Only test on non-Windows platforms
+                    if uart_comm.check_esp32_connection():
+                        logger.info("ESP32 connection test successful")
+                    else:
+                        logger.warning("ESP32 connection test failed")
+            elif key == ord('w'):  # Press 'w' to force weed test command
+                logger.info("Sending manual test command to ESP32...")
+                uart_comm.send_data("TEST_WEED_DETECTION")
             
             # Add small delay to prevent CPU spinning
             time.sleep(0.01)

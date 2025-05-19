@@ -323,7 +323,27 @@ class AIProcessor:
 
     def send_command_to_robot(self, command):
         """Send command string to ESP32 via UART"""
-        return self.uart_comm.send_data(command)
+        try:
+            # Log the command being sent
+            self.logger.info(f"Sending command to ESP32: {command}")
+            
+            # Send the command to the ESP32
+            result = self.uart_comm.send_data(command)
+            
+            # Wait briefly for any response
+            time.sleep(0.2)
+            
+            # Try to get a response from the ESP32
+            response = self.uart_comm.process_esp32_response()
+            if response:
+                self.logger.info(f"Received response to command: {response}")
+            else:
+                self.logger.debug("No immediate response to command")
+            
+            return result
+        except Exception as e:
+            self.logger.error(f"Error sending command to robot: {e}")
+            return False
 
     def _save_debug_visualization(self, image, detections):
         """Save debug visualization of detections"""

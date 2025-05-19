@@ -86,11 +86,20 @@ else:
                         # First flush any incoming data to keep things clean
                         self.ser.reset_input_buffer()
                         
+                        # Log what we're about to send in hex for debugging
+                        self.logger.debug(f"Sending raw bytes: {message.encode('ascii').hex()}")
+                        
                         # Then write the message
                         self.ser.write(message.encode('ascii'))
                         self.ser.flush()  # Make sure data is sent immediately
                         
                         self.logger.debug(f"Sent data: {data}")
+                        
+                        # Wait briefly and check if there's an immediate response
+                        time.sleep(0.1)
+                        if self.ser.in_waiting > 0:
+                            self.logger.debug(f"Immediate response detected ({self.ser.in_waiting} bytes available)")
+                        
                         return True
                 except Exception as e:
                     self.logger.error(f"Error sending data: {e}")
@@ -111,6 +120,18 @@ else:
             # Format message in the format expected by the ESP32 code
             # This exactly matches the format in serial_comm.cpp: parse_weed_coordinates()
             message = f"X={x} Y={y}"
+            
+            # Log that we're sending coordinates
+            self.logger.info(f"Attempting to send coordinates: {message}")
+            
+            # Check if the device is responsive first
+            if self.ser and self.ser.is_open:
+                bytes_waiting = self.ser.in_waiting
+                if bytes_waiting > 0:
+                    self.logger.info(f"Found {bytes_waiting} bytes waiting before sending. Clearing buffer.")
+                    self.ser.reset_input_buffer()
+            
+            # Now send the actual message
             success = self.send_data(message)
             
             if success:
@@ -132,9 +153,13 @@ else:
             if self.ser and self.ser.is_open:
                 try:
                     with self.lock:
-                        if self.ser.in_waiting > 0:
+                        in_waiting = self.ser.in_waiting
+                        if in_waiting > 0:
+                            self.logger.debug(f"Data available to read: {in_waiting} bytes")
+                            
                             # Read raw binary data
                             raw_data = self.ser.readline()
+                            self.logger.debug(f"Read raw bytes: {raw_data.hex()}")
                             
                             try:
                                 # Try to decode using ASCII first (ESP32 should be sending ASCII)
@@ -155,6 +180,9 @@ else:
                                 self.logger.error(f"Error decoding data: {e}, raw bytes: {repr(raw_data)}")
                                 # Return a safe string representation of the raw data
                                 return f"[Binary data: {raw_data.hex()}]"
+                        else:
+                            # No data waiting
+                            return None
                 except Exception as e:
                     self.logger.error(f"Error receiving data: {e}")
             return None
@@ -205,3 +233,34 @@ else:
                     self.logger.debug("UART connection closed")
                 except Exception as e:
                     self.logger.error(f"Error closing UART connection: {e}")
+        
+        def check_esp32_connection(self):
+            """Check if ESP32 is responsive and communicating properly"""
+            self.logger.info("Testing ESP32 connection...")
+            
+            # First, flush any pending data
+            self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
+            
+            # Send a test message
+            test_message = "SYSTEM_TEST\n"
+            self.logger.info(f"Sending test message: {test_message.strip()}")
+            
+            try:
+                self.ser.write(test_message.encode('ascii'))
+                self.ser.flush()
+                
+                # Wait for a response
+                time.sleep(1.0)
+                
+                # Check if there's any response
+                if self.ser.in_waiting > 0:
+                    raw_data = self.ser.read(self.ser.in_waiting)
+                    self.logger.info(f"Received response: {raw_data}")
+                    return True
+                else:
+                    self.logger.warning("No response from ESP32 to test message")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error testing ESP32 connection: {e}")
+                return False
