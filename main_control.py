@@ -191,6 +191,8 @@ def main():
     
     # Keep track of the most recent detections
     last_detections = []
+    last_detection_time = time.time()  # Track when detections were last updated
+    detection_expiry_time = 6.0  # Expire detections after 6 seconds if no new ones
     
     # Weed detection state
     is_processing_weed = False
@@ -236,6 +238,11 @@ def main():
                 
                 last_temp_check = current_time
             
+            # Check if we should clear detections based on time
+            if last_detections and (current_time - last_detection_time) > detection_expiry_time:
+                logger.info("Detection data expired, clearing display")
+                last_detections = []
+            
             # Check for ESP32 status messages
             esp32_status = uart_comm.process_esp32_response()
             if esp32_status:
@@ -245,6 +252,9 @@ def main():
                 if is_processing_weed and (esp32_status == "WEEDING_COMPLETED" or esp32_status == "WEED_REMOVED"):
                     is_processing_weed = False
                     logger.info("Weed processing completed by ESP32")
+                    # Clear the detections when weed removal is confirmed
+                    logger.info("Clearing detections after weed removal confirmation")
+                    last_detections = []
             
             # Grab frame from camera
             ret, frame = cap.read()
@@ -274,40 +284,38 @@ def main():
                 # Process with AI
                 detections = ai_processor.predict(image_path)
                 
+                # Apply additional filtering to improve classification reliability
+                filtered_detections = []
+                for det in detections:
+                    # Skip detections with very small bounding boxes (likely false positives)
+                    box = det['box']
+                    width = box[2] - box[0]
+                    height = box[3] - box[1]
+                    
+                    # Skip if box is too small (adjust these thresholds as needed)
+                    if width < 20 or height < 20:
+                        logger.debug(f"Filtering out small detection {det['class']} with size {width}x{height}")
+                        continue
+                        
+                    # Apply stricter confidence threshold for crop vs weed classification
+                    # This helps prevent misclassification
+                    if det['class'] == 'crop' and det['confidence'] < 0.45:
+                        logger.debug(f"Reclassifying low-confidence crop ({det['confidence']:.2f}) as 'weed'")
+                        det['class'] = 'weed'  # Reclassify as weed if uncertain
+                        
+                    filtered_detections.append(det)
+                
                 # Update last_detections if we got results
-                if detections:
-                    last_detections = detections
+                if filtered_detections:
+                    last_detections = filtered_detections
+                    last_detection_time = time.time()  # Update the timestamp
                     
                     # Log detection results
-                    weed_count = sum(1 for d in detections if d['class'] == 'weed')
-                    crop_count = sum(1 for d in detections if d['class'] == 'crop')
+                    weed_count = sum(1 for d in last_detections if d['class'] == 'weed')
+                    crop_count = sum(1 for d in last_detections if d['class'] == 'crop')
                     
                     if weed_count > 0 or crop_count > 0:
                         logger.info(f"Detected {weed_count} weeds and {crop_count} crops")
-                    
-                    # Process weed detections if we're not already processing one
-                    # and if it's been long enough since the last weed detection
-                    current_time = time.time()
-                    if weed_count > 0 and not is_processing_weed and (current_time - last_weed_time) > weed_process_interval:
-                        # Find the largest weed (by bounding box area) to process
-                        weeds = [d for d in detections if d['class'] == 'weed']
-                        if weeds:
-                            # Calculate areas
-                            for weed in weeds:
-                                box = weed['box']
-                                weed['area'] = (box[2] - box[0]) * (box[3] - box[1])
-                            
-                            # Sort by area (largest first)
-                            weeds.sort(key=lambda w: w['area'], reverse=True)
-                            
-                            # Process the largest weed
-                            largest_weed = weeds[0]
-                            logger.info(f"Processing largest detected weed (area: {largest_weed['area']:.1f} pixels)")
-                            
-                            # Let AI processor handle the detection
-                            is_processing_weed = True
-                            last_weed_time = current_time
-                            ai_processor.handle_weed_detection(largest_weed)
                 
                 # Force garbage collection after processing
                 gc.collect()

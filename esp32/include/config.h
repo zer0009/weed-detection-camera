@@ -9,10 +9,10 @@
 #define DEFAULT_MOTOR_SPEED 180
 
 // UART Communication parameters
-#define UART_PORT 2
+#define UART_PORT 1
 #define BAUD_RATE 115200
-#define SERIAL_TX_PIN 17
-#define SERIAL_RX_PIN 16
+#define SERIAL_TX_PIN 10
+#define SERIAL_RX_PIN 9
 
 // Delta robot parameters
 #define MAX_X 100  // Maximum X coordinate for delta robot
