@@ -192,7 +192,6 @@ def main():
     # Keep track of the most recent detections
     last_detections = []
     last_detection_time = time.time()  # Track when detections were last updated
-    detection_expiry_time = 6.0  # Expire detections after 6 seconds if no new ones
     
     # Weed detection state
     is_processing_weed = False
@@ -238,11 +237,6 @@ def main():
                 
                 last_temp_check = current_time
             
-            # Check if we should clear detections based on time
-            if last_detections and (current_time - last_detection_time) > detection_expiry_time:
-                logger.info("Detection data expired, clearing display")
-                last_detections = []
-            
             # Check for ESP32 status messages
             esp32_status = uart_comm.process_esp32_response()
             if esp32_status:
@@ -252,9 +246,6 @@ def main():
                 if is_processing_weed and (esp32_status == "WEEDING_COMPLETED" or esp32_status == "WEED_REMOVED"):
                     is_processing_weed = False
                     logger.info("Weed processing completed by ESP32")
-                    # Clear the detections when weed removal is confirmed
-                    logger.info("Clearing detections after weed removal confirmation")
-                    last_detections = []
             
             # Grab frame from camera
             ret, frame = cap.read()
