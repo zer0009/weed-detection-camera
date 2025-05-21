@@ -197,7 +197,7 @@ def main():
     # Weed detection state
     is_processing_weed = False
     last_weed_time = 0
-    weed_process_interval = 5.0  # Seconds between weed processing attempts
+    weed_process_interval = 2.0  # Reduced from 5.0 to 2.0 seconds between weed processing attempts
     
     try:
         cap = initialize_camera(camera_config)
@@ -297,12 +297,7 @@ def main():
                         logger.debug(f"Filtering out small detection {det['class']} with size {width}x{height}")
                         continue
                         
-                    # Apply stricter confidence threshold for crop vs weed classification
-                    # This helps prevent misclassification
-                    if det['class'] == 'crop' and det['confidence'] < 0.45:
-                        logger.debug(f"Reclassifying low-confidence crop ({det['confidence']:.2f}) as 'weed'")
-                        det['class'] = 'weed'  # Reclassify as weed if uncertain
-                        
+                    # Keep the original classification from the model
                     filtered_detections.append(det)
                 
                 # Update last_detections if we got results
@@ -316,6 +311,30 @@ def main():
                     
                     if weed_count > 0 or crop_count > 0:
                         logger.info(f"Detected {weed_count} weeds and {crop_count} crops")
+                        
+                        # Process weed detections if not already processing
+                        if not is_processing_weed and weed_count > 0:
+                            # Find the weed closest to the center
+                            center_x = frame.shape[1] / 2
+                            center_y = frame.shape[0] / 2
+                            closest_weed = None
+                            min_distance = float('inf')
+                            
+                            for det in last_detections:
+                                if det['class'] == 'weed':
+                                    box = det['box']
+                                    weed_center_x = (box[0] + box[2]) / 2
+                                    weed_center_y = (box[1] + box[3]) / 2
+                                    distance = ((weed_center_x - center_x) ** 2 + (weed_center_y - center_y) ** 2) ** 0.5
+                                    
+                                    if distance < min_distance:
+                                        min_distance = distance
+                                        closest_weed = det
+                            
+                            if closest_weed and (current_time - last_weed_time) >= weed_process_interval:
+                                is_processing_weed = True
+                                last_weed_time = current_time
+                                ai_processor.handle_weed_detection(closest_weed)
                 
                 # Force garbage collection after processing
                 gc.collect()

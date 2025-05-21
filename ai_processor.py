@@ -18,7 +18,7 @@ class AIProcessor:
         
         ai_config = config['ai']
         self.model_path = ai_config['model_path']
-        self.confidence_threshold = ai_config['confidence_threshold']
+        self.confidence_threshold = ai_config['confidence_threshold']  # Use threshold from config
         self.input_size = tuple(ai_config['input_size'])
         self.class_names = ai_config['class_names']
         
@@ -269,7 +269,6 @@ class AIProcessor:
             
             # Convert angle and distance to ESP32 coordinate system
             # ESP32 code expects coordinates in range 0-100 for both X and Y
-            # Based on serial_comm.cpp:parse_weed_coordinates
             
             # Map camera FOV angles to ESP32's expected 0-100 coordinate range
             # Map -hfov/2 to +hfov/2 -> 0 to 100
@@ -292,9 +291,6 @@ class AIProcessor:
             
             if success:
                 self.logger.info(f"Successfully sent coordinates X={x_coord}, Y={y_coord} to ESP32")
-                
-                # Wait for ESP32 to process and handle the weed
-                time.sleep(1.0)  # Give ESP32 more time to respond
                 
                 # Check for response from ESP32
                 status = self.uart_comm.process_esp32_response()

@@ -15,7 +15,7 @@ camera:
 
 # AI model settings
 ai:
-  model_path: "models/weed_detection_model_ncnn_model"
+  model_path: "models/weed_detection_v2.pt"
   confidence_threshold: 0.26  # Lowered threshold to detect more objects
   input_size: [320, 240]  # Adjusted input size for better performance
   class_names: ["crop", "weed"]

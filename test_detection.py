@@ -76,7 +76,7 @@ def test_detection():
         ai_processor = AIProcessor()
         
         # Test images
-        test_images = ['agri_0_39.jpeg', 'agri_0_126.jpeg']
+        test_images = ['11.jpg', '2.jpg','3.jpg']
         
         for image_name in test_images:
             image_path = Path('images') / image_name
