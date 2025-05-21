@@ -186,23 +186,26 @@ def main():
     fps = 0
     
     # AI processing interval
-    process_every_n_frames = config['ai'].get('process_every_n_frames', 3)
+    process_every_n_frames = 1  # Process every frame for smoother detection
     frame_counter = 0
     
     # Keep track of the most recent detections
     last_detections = []
-    last_detection_time = time.time()  # Track when detections were last updated
+    last_detection_time = time.time()
     
     # Weed detection state
     is_processing_weed = False
     last_weed_time = 0
-    weed_process_interval = 2.0  # Reduced from 5.0 to 2.0 seconds between weed processing attempts
+    weed_process_interval = 1.0  # Reduced to 1 second for faster response
     
     try:
         cap = initialize_camera(camera_config)
         logger.info("Camera initialized successfully")
         logger.info(f"Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
         logger.info(f"Target FPS: {cap.get(cv2.CAP_PROP_FPS)}")
+        
+        # Set camera buffer size to minimum to reduce lag
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         # Main processing loop
         while True:
@@ -216,24 +219,19 @@ def main():
                 if temp > temp_threshold and not is_throttled:
                     logger.warning(f"Temperature too high ({temp:.1f}°C), throttling...")
                     is_throttled = True
-                    process_every_n_frames = max(process_every_n_frames, 5)  # Increase processing interval
+                    process_every_n_frames = 2  # Only skip every other frame when throttled
                     # Reduce camera resolution temporarily
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 160)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 120)
-                    cap.set(cv2.CAP_PROP_FPS, 10)
-                elif temp < (temp_threshold - 5) and is_throttled:  # Resume normal operation when cooled
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)  # Keep reasonable resolution
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                    cap.set(cv2.CAP_PROP_FPS, 15)  # Keep reasonable FPS
+                elif temp < (temp_threshold - 5) and is_throttled:
                     logger.info("Temperature normal, resuming normal operation")
                     is_throttled = False
-                    process_every_n_frames = config['ai'].get('process_every_n_frames', 3)
+                    process_every_n_frames = 1  # Process every frame
                     # Restore camera settings
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_config['resolution'][0])
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_config['resolution'][1])
                     cap.set(cv2.CAP_PROP_FPS, camera_config['framerate'])
-                
-                # Also check ESP32 connection periodically
-                if platform.system() != 'Windows':  # Only check on non-Windows platforms
-                    if uart_comm.process_esp32_response():
-                        logger.info("Received response from ESP32 during periodic check")
                 
                 last_temp_check = current_time
             
@@ -241,8 +239,6 @@ def main():
             esp32_status = uart_comm.process_esp32_response()
             if esp32_status:
                 logger.info(f"ESP32 status: {esp32_status}")
-                
-                # If we're waiting for weed processing to complete
                 if is_processing_weed and (esp32_status == "WEEDING_COMPLETED" or esp32_status == "WEED_REMOVED"):
                     is_processing_weed = False
                     logger.info("Weed processing completed by ESP32")
@@ -251,7 +247,6 @@ def main():
             ret, frame = cap.read()
             if not ret:
                 logger.warning("Failed to grab frame")
-                time.sleep(0.1)  # Add small delay to prevent CPU spinning
                 continue
             
             frame_counter += 1
@@ -264,99 +259,80 @@ def main():
                 fps_start_time = current_time
                 logger.debug(f"Current FPS: {fps}")
             
-            # Only process every nth frame for AI detection
+            # Process every frame for smoother detection
             if frame_counter % process_every_n_frames == 0:
                 # Save frame for AI processing
                 timestamp = int(time.time())
                 image_path = f"images/capture_{timestamp}.jpg"
                 cv2.imwrite(image_path, frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                logger.debug(f"Captured image saved to {image_path}")
                 
                 # Process with AI
                 detections = ai_processor.predict(image_path)
                 
-                # Apply additional filtering to improve classification reliability
+                # Apply size filtering only
                 filtered_detections = []
                 for det in detections:
-                    # Skip detections with very small bounding boxes (likely false positives)
                     box = det['box']
                     width = box[2] - box[0]
                     height = box[3] - box[1]
                     
-                    # Skip if box is too small (adjust these thresholds as needed)
+                    # Skip if box is too small
                     if width < 20 or height < 20:
-                        logger.debug(f"Filtering out small detection {det['class']} with size {width}x{height}")
                         continue
-                        
-                    # Keep the original classification from the model
+                    
                     filtered_detections.append(det)
                 
-                # Update last_detections if we got results
-                if filtered_detections:
-                    last_detections = filtered_detections
-                    last_detection_time = time.time()  # Update the timestamp
-                    
-                    # Log detection results
-                    weed_count = sum(1 for d in last_detections if d['class'] == 'weed')
-                    crop_count = sum(1 for d in last_detections if d['class'] == 'crop')
-                    
-                    if weed_count > 0 or crop_count > 0:
-                        logger.info(f"Detected {weed_count} weeds and {crop_count} crops")
-                        
-                        # Process weed detections if not already processing
-                        if not is_processing_weed and weed_count > 0:
-                            # Find the weed closest to the center
-                            center_x = frame.shape[1] / 2
-                            center_y = frame.shape[0] / 2
-                            closest_weed = None
-                            min_distance = float('inf')
-                            
-                            for det in last_detections:
-                                if det['class'] == 'weed':
-                                    box = det['box']
-                                    weed_center_x = (box[0] + box[2]) / 2
-                                    weed_center_y = (box[1] + box[3]) / 2
-                                    distance = ((weed_center_x - center_x) ** 2 + (weed_center_y - center_y) ** 2) ** 0.5
-                                    
-                                    if distance < min_distance:
-                                        min_distance = distance
-                                        closest_weed = det
-                            
-                            if closest_weed and (current_time - last_weed_time) >= weed_process_interval:
-                                is_processing_weed = True
-                                last_weed_time = current_time
-                                ai_processor.handle_weed_detection(closest_weed)
+                # Update detections immediately
+                last_detections = filtered_detections
                 
-                # Force garbage collection after processing
-                gc.collect()
+                # Process weed detections if not already processing
+                if not is_processing_weed and filtered_detections:
+                    weed_detections = [d for d in filtered_detections if d['class'] == 'weed']
+                    if weed_detections and (current_time - last_weed_time) >= weed_process_interval:
+                        # Find the weed closest to the center
+                        center_x = frame.shape[1] / 2
+                        center_y = frame.shape[0] / 2
+                        closest_weed = None
+                        min_distance = float('inf')
+                        
+                        for det in weed_detections:
+                            box = det['box']
+                            weed_center_x = (box[0] + box[2]) / 2
+                            weed_center_y = (box[1] + box[3]) / 2
+                            distance = ((weed_center_x - center_x) ** 2 + (weed_center_y - center_y) ** 2) ** 0.5
+                            
+                            if distance < min_distance:
+                                min_distance = distance
+                                closest_weed = det
+                        
+                        if closest_weed:
+                            is_processing_weed = True
+                            last_weed_time = current_time
+                            ai_processor.handle_weed_detection(closest_weed)
+                
+                # Clean up old image files
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
             
             # Create a copy of the frame for display
             display_frame = frame.copy()
             
-            # Draw bounding boxes on the display frame if we have detections
+            # Draw bounding boxes on the display frame
             if last_detections:
-                # Draw detections on the live frame
                 for det in last_detections:
-                    # Only show recent detections (within the last 3 seconds)
                     box = det['box']
                     label = f"{det['class']} {det['confidence']:.2f}"
                     
                     # Green for crop, Red for weed
                     color = (0, 255, 0) if det['class'] == 'crop' else (0, 0, 255)
                     
-                    # Draw thicker box
+                    # Draw box with anti-aliasing
                     cv2.rectangle(display_frame, 
                                 (int(box[0]), int(box[1])), 
                                 (int(box[2]), int(box[3])), 
-                                color, 3)
-                    
-                    # Add semi-transparent overlay for visibility
-                    overlay = display_frame.copy()
-                    cv2.rectangle(overlay,
-                                (int(box[0]), int(box[1])),
-                                (int(box[2]), int(box[3])),
-                                color, -1)
-                    cv2.addWeighted(overlay, 0.2, display_frame, 0.8, 0, display_frame)
+                                color, 2)
                     
                     # Draw label with background
                     label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
