@@ -16,11 +16,11 @@ camera:
 # AI model settings
 ai:
   model_path: "models/weed_detection_v2.pt"
-  confidence_threshold: 0.40  # Lowered threshold to detect more objects
+  confidence_threshold: 0.40  # Threshold for weed detection
   input_size: [320, 240]  # Adjusted input size for better performance
-  class_names: ["crop", "weed"]
+  class_names: ["weed"]  # Only weed class
   enable_debug: true  # Enable debug mode to see detection boxes
-  process_every_n_frames: 2  # Process every 2nd frame for more frequent detection
+  process_every_n_frames: 1  # Process every frame for smoother detection
   num_threads: 2  # Reduced threads to prevent overheating
   enable_memory_optimization: true  # Enable memory optimization
 

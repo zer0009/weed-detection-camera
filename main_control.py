@@ -287,15 +287,14 @@ def main():
                 
                 # Process weed detections if not already processing
                 if not is_processing_weed and filtered_detections:
-                    weed_detections = [d for d in filtered_detections if d['class'] == 'weed']
-                    if weed_detections and (current_time - last_weed_time) >= weed_process_interval:
+                    if (current_time - last_weed_time) >= weed_process_interval:
                         # Find the weed closest to the center
                         center_x = frame.shape[1] / 2
                         center_y = frame.shape[0] / 2
                         closest_weed = None
                         min_distance = float('inf')
                         
-                        for det in weed_detections:
+                        for det in filtered_detections:
                             box = det['box']
                             weed_center_x = (box[0] + box[2]) / 2
                             weed_center_y = (box[1] + box[3]) / 2
@@ -323,10 +322,10 @@ def main():
             if last_detections:
                 for det in last_detections:
                     box = det['box']
-                    label = f"{det['class']} {det['confidence']:.2f}"
+                    label = f"Weed {det['confidence']:.2f}"
                     
-                    # Green for crop, Red for weed
-                    color = (0, 255, 0) if det['class'] == 'crop' else (0, 0, 255)
+                    # Red for weed
+                    color = (0, 0, 255)
                     
                     # Draw box with anti-aliasing
                     cv2.rectangle(display_frame, 
@@ -344,14 +343,6 @@ def main():
                               (int(box[0]), int(box[1] - 5)),
                               cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                               (255, 255, 255), 2)
-                    
-                    # Add additional info for weeds
-                    if det['class'] == 'weed':
-                        info_text = f"Dist: {det.get('distance', 0):.1f}cm"
-                        cv2.putText(display_frame, info_text,
-                                  (int(box[0]), int(box[3] + 20)),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                                  (255, 255, 255), 2)
             
             # Add status info to display frame
             cv2.putText(display_frame, f"FPS: {fps}", (10, 30),
@@ -361,10 +352,9 @@ def main():
             
             # Add detection stats
             if last_detections:
-                weed_count = sum(1 for d in last_detections if d['class'] == 'weed')
-                crop_count = sum(1 for d in last_detections if d['class'] == 'crop')
-                cv2.putText(display_frame, f"Weeds: {weed_count}, Crops: {crop_count}", (10, 90),
-                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+                weed_count = len(last_detections)
+                cv2.putText(display_frame, f"Weeds: {weed_count}", (10, 90),
+                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             
             # Add ESP32 connection status
             conn_status = "Connected" if not is_processing_weed else "Processing Weed"
